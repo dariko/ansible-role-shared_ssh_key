@@ -1,0 +1,91 @@
+-   name: get user gid
+    shell: |
+        id -ng "{{shared_ssh_auth_user}}"
+    register: out_shared_ssh_auth_group
+    changed_when: false
+-   name: set shared_ssh_auth_group
+    set_fact:
+        shared_ssh_auth_group: "{{out_shared_ssh_auth_group.stdout}}"
+
+-   name: get user home
+    shell: |
+        getent passwd "{{shared_ssh_auth_user}}" |cut -d : -f 6
+    register: out_shared_ssh_auth_home
+    changed_when: false
+-   name: set shared_ssh_auth_home
+    set_fact:
+        shared_ssh_auth_home: "{{out_shared_ssh_auth_home.stdout}}"
+
+-   name: .ssh dir
+    file:
+        path: "{{shared_ssh_auth_home}}/.ssh"
+        state: directory
+        owner: "{{shared_ssh_auth_user}}"
+        group: "{{shared_ssh_auth_group}}"
+        mode: 0700
+        
+-   name: generate local key
+    command: 
+        ssh-keygen -N '' -f {{shared_ssh_auth_home}}/.ssh/id_rsa
+    args:
+        creates: "{{shared_ssh_auth_home}}/.ssh/id_rsa.pub"
+
+-   name: public key permissions
+    file:
+        path: "{{shared_ssh_auth_home}}/.ssh/id_rsa.pub"
+        owner: "{{shared_ssh_auth_user}}"
+        group: "{{shared_ssh_auth_group}}"
+        mode: 0644
+-   name: private key permissions
+    file:
+        path: "{{shared_ssh_auth_home}}/.ssh/id_rsa"
+        owner: "{{shared_ssh_auth_user}}"
+        group: "{{shared_ssh_auth_group}}"
+        mode: 0600
+
+-   name: read pubkey
+    command:
+        cat {{shared_ssh_auth_home}}/.ssh/id_rsa.pub
+    changed_when: false
+    register: out_shared_ssh_auth_pubkey
+
+-   name: set fact shared_ssh_auth_pubkey
+    set_fact:
+        shared_ssh_auth_pubkey: "{{out_shared_ssh_auth_pubkey.stdout_lines[0]}}"
+
+-   name: .ssh/authorized_keys
+    file:
+        path: "{{shared_ssh_auth_home}}/.ssh/authorized_keys"
+        state: touch
+        owner: "{{shared_ssh_auth_user}}"
+        group: "{{shared_ssh_auth_group}}"
+        mode: 0600
+    changed_when: false
+
+-   name: allow other keys
+    lineinfile:
+        path: "{{shared_ssh_auth_home}}/.ssh/authorized_keys"
+        line: "{{hostvars[item].shared_ssh_auth_pubkey}}"
+    with_items: "{{play_hosts}}"
+    when: item != inventory_hostname
+
+-   name: read other hosts hostkeys
+    shell:
+        ssh-keyscan {{" ".join(play_hosts)}} 2>/dev/null|grep ssh-rsa
+    register: out_shared_ssh_auth_keyscan
+    changed_when: false
+
+-   name: .ssh/known_hosts
+    file:
+        path: "{{shared_ssh_auth_home}}/.ssh/known_hosts"
+        state: touch
+        owner: "{{shared_ssh_auth_user}}"
+        group: "{{shared_ssh_auth_group}}"
+        mode: 0600
+    changed_when: false
+
+-   name: mark hostkeys as known
+    lineinfile:
+        path: "{{shared_ssh_auth_home}}/.ssh/known_hosts"
+        line: "{{item}}"
+    with_items: "{{out_shared_ssh_auth_keyscan.stdout_lines}}"

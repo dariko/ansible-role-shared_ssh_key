@@ -1,0 +1,2 @@
+shared_ssh_auth_user: root
+#shared_ssh_auth_home: "{{'/root/' if shared_ssh_auth_user=='root' else '/home/' + shared_ssh_auth_user +'/'}}"
